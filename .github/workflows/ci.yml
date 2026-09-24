@@ -47,6 +47,12 @@ jobs:
       - name: Build context
         run: echo "BLACKSMITH-DEMO-MARKER building stats service from a cold start"
 
+      - name: Mount sticky disk for build artifacts
+        uses: useblacksmith/stickydisk@v1
+        with:
+          key: ${{ github.repository }}-cargo-target
+          path: ./stats/target
+
       - name: Build and test
         working-directory: stats
         run: cargo test --locked
@@ -107,6 +113,12 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Mount sticky disk for Playwright browsers
+        uses: useblacksmith/stickydisk@v1
+        with:
+          key: ${{ github.repository }}-playwright
+          path: /home/runner/.cache/ms-playwright
 
       - name: Install Chromium
         run: pnpm --filter @blacksmith-demo/e2e exec playwright install --with-deps chromium
