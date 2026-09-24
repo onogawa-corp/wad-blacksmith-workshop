@@ -9,12 +9,16 @@ on:
   pull_request:
   workflow_dispatch:
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   web:
     name: web (pnpm + Vite + vitest)
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
-      - uses: actions/checkout@v7
+      - uses: useblacksmith/checkout@v1
       - name: Start timer
         run: echo "JOB_T0=$(date +%s)" >> "$GITHUB_ENV"
 
@@ -22,6 +26,7 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 22
+          cache: pnpm
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -38,14 +43,28 @@ jobs:
 
   rust:
     name: rust (cargo build + test)
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
-      - uses: actions/checkout@v7
+      - uses: useblacksmith/checkout@v1
       - name: Start timer
         run: echo "JOB_T0=$(date +%s)" >> "$GITHUB_ENV"
 
       - name: Build context
         run: echo "BLACKSMITH-DEMO-MARKER building stats service from a cold start"
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-${{ hashFiles('stats/Cargo.lock') }}
+
+      - name: Mount sticky disk for build artifacts
+        uses: useblacksmith/stickydisk@v1
+        with:
+          key: ${{ github.repository }}-cargo-target
+          path: ./stats/target
 
       - name: Build and test
         working-directory: stats
@@ -57,7 +76,7 @@ jobs:
 
   integration:
     name: integration (Go + Postgres)
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     services:
       postgres:
         image: postgres:17-alpine
@@ -72,7 +91,7 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: useblacksmith/checkout@v1
       - name: Start timer
         run: echo "JOB_T0=$(date +%s)" >> "$GITHUB_ENV"
 
@@ -93,10 +112,10 @@ jobs:
 
   e2e:
     name: e2e (Playwright)
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 8
     steps:
-      - uses: actions/checkout@v7
+      - uses: useblacksmith/checkout@v1
       - name: Start timer
         run: echo "JOB_T0=$(date +%s)" >> "$GITHUB_ENV"
 
@@ -104,9 +123,16 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 22
+          cache: pnpm
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Mount sticky disk for Playwright browsers
+        uses: useblacksmith/stickydisk@v1
+        with:
+          key: ${{ github.repository }}-playwright
+          path: /home/runner/.cache/ms-playwright
 
       - name: Install Chromium
         run: pnpm --filter @blacksmith-demo/e2e exec playwright install --with-deps chromium
@@ -123,16 +149,19 @@ jobs:
 
   docker:
     name: docker (container image)
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
-      - uses: actions/checkout@v7
+      - uses: useblacksmith/checkout@v1
       - name: Start timer
         run: echo "JOB_T0=$(date +%s)" >> "$GITHUB_ENV"
 
-      - uses: docker/setup-buildx-action@v4
+      - name: Set up Docker builder
+        uses: useblacksmith/setup-docker-builder@v2
+        with:
+          cache-key: wad-blacksmith-workshop/api/Dockerfile
 
       - name: Build image
-        uses: docker/build-push-action@v7
+        uses: useblacksmith/build-push-action@v2
         with:
           context: .
           file: api/Dockerfile
